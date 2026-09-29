@@ -776,23 +776,23 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                         answer = auth_answer
                     elif label_has(label, 'email', 'phone'):
                         answer = prev_answer
-                elif label_has(label, 'gender', 'sex', 'sexual orientation'):
-                    answer = gender
-                elif label_has(label, 'disability'):
-                    answer = disability_status
-                elif label_has(label, 'proficiency'):
-                    answer = 'Professional'
-                elif label_has(label, 'location', 'city', 'state', 'country'):
-                    if label_has(label, 'country'):
-                        answer = country
-                    elif label_has(label, 'state'):
-                        answer = state
-                    elif label_has(label, 'city'):
-                        answer = current_city if current_city else work_location
+                    elif label_has(label, 'gender', 'sex', 'sexual orientation'):
+                        answer = gender
+                    elif label_has(label, 'disability'):
+                        answer = disability_status
+                    elif label_has(label, 'proficiency'):
+                        answer = 'Professional'
+                    elif label_has(label, 'location', 'city', 'state', 'country'):
+                        if label_has(label, 'country'):
+                            answer = country
+                        elif label_has(label, 'state'):
+                            answer = state
+                        elif label_has(label, 'city'):
+                            answer = current_city if current_city else work_location
+                        else:
+                            answer = work_location
                     else:
-                        answer = work_location
-                else:
-                    answer = answer_common_questions(label, answer)
+                        answer = answer_common_questions(label, answer)
                 try:
                     if answer is None: raise NoSuchElementException(label_org)
                     select.select_by_visible_text(answer)
