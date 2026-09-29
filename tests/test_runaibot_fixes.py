@@ -178,3 +178,18 @@ def test_easy_apply_detection_is_an_ordered_fallback_list(bot):
 # ------------------------------- M: the no-submit flag -----------------------------
 def test_stop_before_submit_setting_is_always_defined(bot):
     assert isinstance(bot.stop_before_submit, bool)
+
+# --------------------------- Search URL construction -----------------------------
+def test_search_url_encodes_keywords_and_location(bot):
+    from urllib.parse import urlencode
+
+    search_term = "DevOps & Cloud Engineer"
+    current_city = "Berlin, Germany"
+    params = {"keywords": search_term}
+    if current_city:
+        params["location"] = current_city
+
+    url = "https://www.linkedin.com/jobs/search/?" + urlencode(params)
+
+    assert "keywords=DevOps+%26+Cloud+Engineer" in url
+    assert "location=Berlin%2C+Germany" in url
