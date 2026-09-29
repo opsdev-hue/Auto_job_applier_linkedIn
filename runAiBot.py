@@ -110,7 +110,7 @@ def format_not_applied_details() -> str:
         lines.append(f"   Reason: {reason}")
         if detail:
             lines.append(f"   Detail: {detail}")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 class StoppedBeforeSubmit(Exception):
