@@ -95,6 +95,28 @@ def createChromeSession(isRetry: bool = False):
         # ponytail: warning only, no stealth patching here. Set auto_manage_driver = True if LinkedIn starts blocking.
         logger.warning("auto_manage_driver is False, so we're using plain Selenium with NO anti-detection at all. LinkedIn may flag or block this session, set auto_manage_driver = True in config/settings.py if that happens.")
         driver = webdriver.Chrome(options=options) #, service=Service(executable_path="C:\\Program Files\\Google\\Chrome\\chromedriver-win64\\chromedriver.exe"))
+    # Keep LinkedIn's UI in English even when the Chrome/account locale is German.
+    # Chrome's Accept-Language alone is not enough because LinkedIn can persist its own
+    # language choice in the `lang` cookie.
+    try:
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.setExtraHTTPHeaders", {
+            "headers": {"Accept-Language": "en-US,en;q=0.9"}
+        })
+        driver.get("https://www.linkedin.com/")
+        try:
+            driver.add_cookie({
+                "name": "lang",
+                "value": "v=2&lang=en-us",
+                "domain": ".linkedin.com",
+                "path": "/"
+            })
+        except Exception:
+            pass
+        driver.refresh()
+    except Exception as e:
+        logger.warning("Could not force LinkedIn English locale: %s", e)
+
     driver.maximize_window()
     wait = WebDriverWait(driver, 5)
     actions = ActionChains(driver)
