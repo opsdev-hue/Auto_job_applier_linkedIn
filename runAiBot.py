@@ -716,6 +716,53 @@ def upload_resume(modal: WebElement, resume: str) -> tuple[bool, str]:
         return True, os.path.basename(default_resume_path)
     except: return False, "Previous resume"
 
+def fill_phone_fields(modal: WebElement) -> None:
+    '''
+    Fill LinkedIn's initial Easy Apply phone fields before clicking Next.
+
+    The phone country selector can live outside the data-test-form-element containers
+    processed by answer_questions(). LinkedIn also preselects it from the browser/account
+    locale (for example +49 in Germany), so handling it there is too late.
+    '''
+    try:
+        selects = modal.find_elements(By.XPATH, ".//select")
+        for select_element in selects:
+            try:
+                options = [option.text.strip() for option in Select(select_element).options]
+                lowered = " ".join(options).lower()
+                # Country-code selects contain multiple international calling codes.
+                if any("+91" in option or "india" in option.lower() for option in options) and (
+                    "germany" in lowered or "+49" in lowered or "country" in lowered
+                ):
+                    select = Select(select_element)
+                    india_option = next(
+                        (
+                            option for option in select.options
+                            if "india" in option.text.lower() and ("+91" in option.text or "91" in option.text)
+                        ),
+                        None,
+                    )
+                    if india_option:
+                        select.select_by_visible_text(india_option.text)
+                        print_lg(f'Phone country code set to India: "{india_option.text}"')
+                        break
+            except Exception:
+                continue
+
+        # The phone number itself is usually on the same first Easy Apply page.
+        phone_inputs = modal.find_elements(
+            By.XPATH,
+            ".//input[@type='tel' or contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'phone') or contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'phone')]"
+        )
+        phone_input = pick_first_displayed(phone_inputs)
+        if phone_input and phone_number.strip():
+            phone_input.clear()
+            human_type(phone_input, phone_number.strip())
+            print_lg("Phone number filled from config.")
+    except Exception as e:
+        logger.warning("Could not prefill Easy Apply phone fields: %s", e)
+
+
 # Function to answer common questions for Easy Apply
 def answer_common_questions(label: str, answer: str | None) -> str | None:
     auth_answer = work_authorization_answer(label)
@@ -1427,6 +1474,10 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                 resume = "Previous resume"
                                 next_button = True
                                 questions_list = set()
+                                # Phone country code/number are often on the first Easy Apply
+                                # page but outside the question containers. Fill them before the
+                                # first Next click so LinkedIn's locale-derived +49 is replaced.
+                                fill_phone_fields(modal)
                                 next_counter = 0
                                 blocked_questions = None
                                 while next_button:
