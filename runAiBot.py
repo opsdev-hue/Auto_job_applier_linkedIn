@@ -470,6 +470,19 @@ total_experience_terms = ['years of experience', 'years experience', 'work exper
 # "years of experience IN Kubernetes", "experience WITH Python", "how many years USING AWS".
 skill_qualifier_terms = ['in', 'with', 'using', 'on']
 
+def is_total_experience_question(label: str) -> bool:
+    """Return True for generic total-experience questions, including common LinkedIn wording."""
+    text = re.sub(r'[^a-z0-9+ ]+', ' ', (label or '').lower())
+    text = re.sub(r'\\s+', ' ', text).strip()
+    # Generic forms: "How many years of experience do you have?",
+    # "Years of professional experience", "How much work experience...".
+    has_experience = bool(re.search(r'\\b(experience|work experience|professional experience|industry experience)\\b', text))
+    asks_amount = bool(re.search(r'\\b(how many|how much|number of|years?)\\b', text))
+    # A skill-specific qualifier must be handled separately; don't use total experience
+    # for questions such as "years of AWS experience" or "experience with Python".
+    skill_specific = bool(find_bad_word(text, skill_qualifier_terms))
+    return has_experience and asks_amount and not skill_specific
+
 def work_authorization_answer(label: str) -> str | None:
     '''
     The configured answer for a visa / authorization / citizenship question, else `None`.
@@ -819,12 +832,10 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
             if not prev_answer or overwrite_previous_answers:
                 auth_answer = work_authorization_answer(label)
                 if auth_answer is not None: answer = auth_answer
-                elif label_has(label, 'experience', 'years'):
-                    # Only the total. "How many years of Kubernetes experience do you have?"
-                    # and "...experience with Python?" ask about ONE skill, and the user's
-                    # total is a false answer to those - leave them for config/questions.py.
-                    if find_bad_word(label, total_experience_terms) and not find_bad_word(label, skill_qualifier_terms):
-                        answer = years_of_experience
+                elif is_total_experience_question(label) or (find_bad_word(label, total_experience_terms) and not find_bad_word(label, skill_qualifier_terms)):
+                    # Generic total-experience questions use the configured value. Skill-specific
+                    # questions (AWS/Python/Kubernetes/etc.) are intentionally not given the total.
+                    answer = years_of_experience
                 elif label_has(label, 'phone', 'mobile'): answer = phone_number
                 elif label_has(label, 'street'): answer = street
                 elif label_has(label, 'email'):
