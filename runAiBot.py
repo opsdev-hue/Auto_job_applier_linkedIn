@@ -169,6 +169,10 @@ def is_logged_in_LN() -> bool:
     '''
     # The feed URL now carries query params (?trk=...), so match a prefix, not the whole URL.
     if driver.current_url.startswith("https://www.linkedin.com/feed"): return True
+    # Never assume a session is authenticated just because the English "Sign in" text
+    # is missing. LinkedIn may render the login page in another language.
+    if "/login" in driver.current_url or "authwall" in driver.current_url or "checkpoint" in driver.current_url:
+        return False
     if try_linkText(driver, "Sign in"): return False
     # click=False: this is a check, it must not press Sign in as a side effect.
     if try_xp(driver, sign_in_button_xpath, False):  return False
@@ -185,7 +189,7 @@ def login_LN() -> None:
     * If both failed, asks user to login manually
     '''
     # Find the username and password fields and fill them with user credentials
-    driver.get("https://www.linkedin.com/login")
+    driver.get("https://www.linkedin.com/login?locale=en_US")
     if username == "username@example.com" and password == "example_password":
         pyautogui.alert("User did not configure username and password in secrets.py, hence can't login automatically! Please login manually!", "Login Manually","Okay")
         print_lg("User did not configure username and password in secrets.py, hence can't login automatically! Please login manually!")
@@ -1592,8 +1596,14 @@ def main() -> None:
         
         # Login to LinkedIn
         tabs_count = len(driver.window_handles)
-        driver.get("https://www.linkedin.com/login")
-        if not is_logged_in_LN(): login_LN()
+        # Authentication must succeed before the first jobs/search request.
+        driver.get("https://www.linkedin.com/login?locale=en_US")
+        if not is_logged_in_LN():
+            print_lg("LinkedIn session is not authenticated. Logging in before starting job search...")
+            login_LN()
+        if not is_logged_in_LN():
+            raise RuntimeError("LinkedIn login could not be verified; stopping before job search.")
+        print_lg("LinkedIn login verified. Starting job search.")
         
         linkedIn_tab = driver.current_window_handle
 
