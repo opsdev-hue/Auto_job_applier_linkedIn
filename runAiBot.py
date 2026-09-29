@@ -22,6 +22,7 @@ import csv
 import re
 import time
 import pyautogui
+from urllib.parse import urlencode
 
 # Raise the CSV field-size cap so very long job descriptions don't trip the writer.
 csv.field_size_limit(1000000)
@@ -1167,9 +1168,14 @@ def apply_to_jobs(search_terms: list[str]) -> None:
     global current_city, failed_count, skip_count, easy_applied_count, external_jobs_count, tabs_count, pause_before_submit, pause_at_failed_question, useNewResume
     current_city = current_city.strip()
 
-    if randomize_search_order:  shuffle(search_terms)
+    if randomize_search_order:
+        shuffle(search_terms)
     for searchTerm in search_terms:
-        driver.get(f"https://www.linkedin.com/jobs/search/?keywords={searchTerm}")
+        params = {"keywords": searchTerm}
+        if current_city:
+            params["location"] = current_city
+        search_url = "https://www.linkedin.com/jobs/search/?" + urlencode(params)
+        driver.get(search_url)
         print_lg("\n________________________________________________________________________________________________________________________\n")
         print_lg(f'\n>>>> Now searching for "{searchTerm}" <<<<\n\n')
 
