@@ -26,6 +26,11 @@ last_name = "Golla"                # Your last name in quotes Eg: "Last", "Golla
 # Phone number (required), make sure it's valid.
 phone_number = "9876543210"        # Enter your 10 digit number in quotes Eg: "9876543210"
 
+# Phone country code used by LinkedIn Easy Apply phone fields.
+# LinkedIn can preselect this from the browser/account locale, so set it explicitly.
+# The bot matches the configured value against LinkedIn's available country-code options.
+phone_country_code = "India (+91)"
+
 # What is your current city?
 current_city = ""                  # Los Angeles, San Francisco, etc.
 '''
