@@ -481,6 +481,9 @@ def is_total_experience_question(label: str) -> bool:
     # A skill-specific qualifier must be handled separately; don't use total experience
     # for questions such as "years of AWS experience" or "experience with Python".
     skill_specific = bool(find_bad_word(text, skill_qualifier_terms))
+    # "years of AWS experience" / "years of Python experience" are skill-specific even
+    # though they do not contain the words "with", "in", or "using".
+    skill_specific = skill_specific or bool(re.search(r'\\byears?\\s+of\\s+[a-z0-9+#.\\-]+(?:\\s+[a-z0-9+#.\\-]+){0,3}\\s+experience\\b', text))
     return has_experience and asks_amount and not skill_specific
 
 def work_authorization_answer(label: str) -> str | None:
