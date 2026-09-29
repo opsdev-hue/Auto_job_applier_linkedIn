@@ -193,3 +193,11 @@ def test_search_url_encodes_keywords_and_location(bot):
 
     assert "keywords=DevOps+%26+Cloud+Engineer" in url
     assert "location=Berlin%2C+Germany" in url
+
+
+# ------------------------ Total experience question handling --------------------
+def test_total_experience_question_detection(bot):
+    assert bot.is_total_experience_question("How many years of experience do you have?")
+    assert bot.is_total_experience_question("How much professional experience do you have?")
+    assert not bot.is_total_experience_question("How many years of AWS experience do you have?")
+    assert not bot.is_total_experience_question("How many years of experience do you have with Python?")
