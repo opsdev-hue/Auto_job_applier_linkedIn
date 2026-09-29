@@ -100,6 +100,19 @@ def record_not_applied(title: str, company: str, reason: str, detail: str = "") 
         not_applied_details.append(entry)
 
 
+def format_not_applied_details() -> str:
+    """Return the human-readable per-job section used by both logs and the final dialog."""
+    if not not_applied_details:
+        return ""
+    lines = ["Applications not completed:"]
+    for index, (title, company, reason, detail) in enumerate(not_applied_details, 1):
+        lines.append(f"{index}. {title} | {company}")
+        lines.append(f"   Reason: {reason}")
+        if detail:
+            lines.append(f"   Detail: {detail}")
+    return "\\n".join(lines)
+
+
 class StoppedBeforeSubmit(Exception):
     '''
     Raised when `stop_before_submit` deliberately halts a fully-filled application at the
@@ -1586,6 +1599,9 @@ def main() -> None:
         pyautogui.alert(e,alert_title)
     finally:
         summary = "Total runs: {}\nJobs Easy Applied: {}\nExternal job links collected: {}\nTotal applied or collected: {}\nFailed jobs: {}\nIrrelevant jobs skipped: {}\n".format(total_runs,easy_applied_count,external_jobs_count,easy_applied_count + external_jobs_count,failed_count,skip_count)
+        not_applied_summary = format_not_applied_details()
+        if not_applied_summary:
+            summary += "\\n" + not_applied_summary + "\\n"
         print_lg(summary)
         print_lg("\n\nTotal runs:                     {}".format(total_runs))
         print_lg("Jobs Easy Applied:              {}".format(easy_applied_count))
