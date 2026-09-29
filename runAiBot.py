@@ -21,6 +21,7 @@ import sys
 import csv
 import re
 import time
+from urllib.parse import quote_plus
 import pyautogui
 
 # Raise the CSV field-size cap so very long job descriptions don't trip the writer.
@@ -34,7 +35,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.remote.webelement import WebElement
-from selenium.common.exceptions import NoSuchElementException, ElementClickInterceptedException, NoSuchWindowException, ElementNotInteractableException, WebDriverException
+from selenium.common.exceptions import NoSuchElementException, ElementClickInterceptedException, NoSuchWindowException, ElementNotInteractableException, WebDriverException, TimeoutException
 
 from config.personals import *
 from config.questions import *
@@ -1169,7 +1170,8 @@ def apply_to_jobs(search_terms: list[str]) -> None:
 
     if randomize_search_order:  shuffle(search_terms)
     for searchTerm in search_terms:
-        driver.get(f"https://www.linkedin.com/jobs/search/?keywords={searchTerm}")
+        search_url = f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(searchTerm)}&locale=en_US"
+        driver.get(search_url)
         print_lg("\n________________________________________________________________________________________________________________________\n")
         print_lg(f'\n>>>> Now searching for "{searchTerm}" <<<<\n\n')
 
@@ -1178,8 +1180,37 @@ def apply_to_jobs(search_terms: list[str]) -> None:
         current_count = 0
         try:
             while current_count < switch_number:
-                # Wait until job listings are loaded
-                wait.until(EC.presence_of_all_elements_located((By.XPATH, "//li[@data-occludable-job-id]")))
+                # Wait until job listings are loaded. LinkedIn can briefly return a
+                # locale/login/challenge page instead of the results list. A normal
+                # TimeoutException must not be mistaken for a dead Chrome session.
+                try:
+                    WebDriverWait(driver, 15).until(
+                        EC.presence_of_all_elements_located((By.XPATH, "//li[@data-occludable-job-id]"))
+                    )
+                except TimeoutException:
+                    try:
+                        current_url = driver.current_url
+                        page_title = driver.title
+                        print_lg(f'Job results did not load for "{searchTerm}" within 15s. URL: {current_url} | Title: {page_title}')
+                        if "/login" in current_url or "checkpoint" in current_url or "authwall" in current_url:
+                            print_lg("LinkedIn redirected to a login/checkpoint page. Re-authenticating and retrying this search once.")
+                            login_LN()
+                            driver.get(search_url)
+                            WebDriverWait(driver, 15).until(
+                                EC.presence_of_all_elements_located((By.XPATH, "//li[@data-occludable-job-id]"))
+                            )
+                        else:
+                            print_lg("Refreshing the LinkedIn search page and retrying once.")
+                            driver.get(search_url)
+                            WebDriverWait(driver, 15).until(
+                                EC.presence_of_all_elements_located((By.XPATH, "//li[@data-occludable-job-id]"))
+                            )
+                    except TimeoutException:
+                        logger.warning('LinkedIn search results still did not load for "%s"; skipping this search term.', searchTerm)
+                        break
+                    except WebDriverException:
+                        # Chrome/session really is gone. Let the outer handler report it.
+                        raise
 
                 pagination_element, current_page = get_page_info()
 
