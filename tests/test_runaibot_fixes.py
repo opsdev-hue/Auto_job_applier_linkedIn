@@ -193,3 +193,40 @@ def test_search_url_encodes_keywords_and_location(bot):
 
     assert "keywords=DevOps+%26+Cloud+Engineer" in url
     assert "location=Berlin%2C+Germany" in url
+
+
+# ------------------------ Total experience question handling --------------------
+def test_total_experience_question_detection(bot):
+    assert bot.is_total_experience_question("How many years of experience do you have?")
+    assert bot.is_total_experience_question("How much professional experience do you have?")
+    assert not bot.is_total_experience_question("How many years of AWS experience do you have?")
+    assert not bot.is_total_experience_question("How many years of experience do you have with Python?")
+
+
+# ---------------------- Per-job completion reporting ----------------------
+def test_not_applied_summary_includes_reason_and_question(bot):
+    bot.not_applied_details.clear()
+    bot.record_not_applied(
+        "AWS Engineer",
+        "Example GmbH",
+        "Required Easy Apply question unanswered",
+        'Skipping "AWS Engineer" - no answer in config/questions.py for: How many years of AWS experience do you have?',
+    )
+
+    summary = bot.format_not_applied_details()
+
+    assert "AWS Engineer | Example GmbH" in summary
+    assert "Required Easy Apply question unanswered" in summary
+    assert "How many years of AWS experience do you have?" in summary
+    bot.not_applied_details.clear()
+
+
+def test_not_applied_summary_deduplicates_identical_entries(bot):
+    bot.not_applied_details.clear()
+    bot.record_not_applied("DevOps Engineer", "Example GmbH", "Already applied")
+    bot.record_not_applied("DevOps Engineer", "Example GmbH", "Already applied")
+
+    summary = bot.format_not_applied_details()
+
+    assert summary.count("DevOps Engineer | Example GmbH") == 1
+    bot.not_applied_details.clear()

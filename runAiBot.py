@@ -87,6 +87,31 @@ randomly_answered_questions = set()
 # Questions the LAST `answer_questions` pass could not answer at all - reset every pass.
 # Two identical passes in a row means the form can never advance on its own.
 unanswered_questions = set()
+# Per-run details for jobs that were not successfully applied/collected.
+# Each entry is a tuple: (title, company, reason, optional detail).
+not_applied_details = []
+last_job_skip_reason = None
+
+
+def record_not_applied(title: str, company: str, reason: str, detail: str = "") -> None:
+    """Record a concise, de-duplicated reason for a job that was not completed."""
+    entry = (str(title or "Unknown title"), str(company or "Unknown company"), str(reason), str(detail or ""))
+    if entry not in not_applied_details:
+        not_applied_details.append(entry)
+
+
+def format_not_applied_details() -> str:
+    """Return the human-readable per-job section used by both logs and the final dialog."""
+    if not not_applied_details:
+        return ""
+    lines = ["Applications not completed:"]
+    for index, (title, company, reason, detail) in enumerate(not_applied_details, 1):
+        lines.append(f"{index}. {title} | {company}")
+        lines.append(f"   Reason: {reason}")
+        if detail:
+            lines.append(f"   Detail: {detail}")
+    return "\n".join(lines)
+
 
 class StoppedBeforeSubmit(Exception):
     '''
@@ -416,6 +441,8 @@ def get_job_main_details(job: WebElement, blacklisted_companies: set, rejected_j
     * work_style: Work style of this job (Remote, On-site, Hybrid)
     * skip: A boolean flag to skip this job
     '''
+    global last_job_skip_reason
+    last_job_skip_reason = None
     skip = False
     # Every class on a job card that carried data is now a rotating random string, so anchor
     # on the artdeco lockup structure instead. The title link is no longer the card's first
@@ -440,13 +467,16 @@ def get_job_main_details(job: WebElement, blacklisted_companies: set, rejected_j
     # Skip if previously rejected due to blacklist or already applied
     if company in blacklisted_companies:
         print_lg(f'Skipping "{title} | {company}" job (Blacklisted Company). Job ID: {job_id}!')
+        last_job_skip_reason = "Blacklisted company"
         skip = True
-    elif job_id in rejected_jobs: 
+    elif job_id in rejected_jobs:
         print_lg(f'Skipping previously rejected "{title} | {company}" job. Job ID: {job_id}!')
+        last_job_skip_reason = "Previously rejected"
         skip = True
     try:
         if job.find_element(By.CLASS_NAME, "job-card-container__footer-job-state").text == "Applied":
             skip = True
+            last_job_skip_reason = "Already applied"
             print_lg(f'Already applied to "{title} | {company}" job. Job ID: {job_id}!')
     except: pass
     try: 
@@ -528,6 +558,22 @@ total_experience_terms = ['years of experience', 'years experience', 'work exper
 # ...and not when that question is narrowed to one skill: "years of Kubernetes experience",
 # "years of experience IN Kubernetes", "experience WITH Python", "how many years USING AWS".
 skill_qualifier_terms = ['in', 'with', 'using', 'on']
+
+def is_total_experience_question(label: str) -> bool:
+    """Return True for generic total-experience questions, including common LinkedIn wording."""
+    text = re.sub(r'[^a-z0-9+ ]+', ' ', (label or '').lower())
+    text = re.sub(r'\\s+', ' ', text).strip()
+    # Generic forms: "How many years of experience do you have?",
+    # "Years of professional experience", "How much work experience...".
+    has_experience = bool(re.search(r'\\b(experience|work experience|professional experience|industry experience)\\b', text))
+    asks_amount = bool(re.search(r'\\b(how many|how much|number of|years?)\\b', text))
+    # A skill-specific qualifier must be handled separately; don't use total experience
+    # for questions such as "years of AWS experience" or "experience with Python".
+    skill_specific = bool(find_bad_word(text, skill_qualifier_terms))
+    # "years of AWS experience" / "years of Python experience" are skill-specific even
+    # though they do not contain the words "with", "in", or "using".
+    skill_specific = skill_specific or bool(re.search(r'\\byears?\\s+of\\s+[a-z0-9+#.\\-]+(?:\\s+[a-z0-9+#.\\-]+){0,3}\\s+experience\\b', text))
+    return has_experience and asks_amount and not skill_specific
 
 def work_authorization_answer(label: str) -> str | None:
     '''
@@ -930,12 +976,10 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
             if not prev_answer or overwrite_previous_answers:
                 auth_answer = work_authorization_answer(label)
                 if auth_answer is not None: answer = auth_answer
-                elif label_has(label, 'experience', 'years'):
-                    # Only the total. "How many years of Kubernetes experience do you have?"
-                    # and "...experience with Python?" ask about ONE skill, and the user's
-                    # total is a false answer to those - leave them for config/questions.py.
-                    if find_bad_word(label, total_experience_terms) and not find_bad_word(label, skill_qualifier_terms):
-                        answer = years_of_experience
+                elif is_total_experience_question(label) or (find_bad_word(label, total_experience_terms) and not find_bad_word(label, skill_qualifier_terms)):
+                    # Generic total-experience questions use the configured value. Skill-specific
+                    # questions (AWS/Python/Kubernetes/etc.) are intentionally not given the total.
+                    answer = years_of_experience
                 elif label_has(label, 'phone', 'mobile'): answer = phone_number
                 elif label_has(label, 'street'): answer = street
                 elif label_has(label, 'email'):
@@ -1276,7 +1320,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
     applied_jobs = get_applied_job_ids()
     rejected_jobs = set()
     blacklisted_companies = set()
-    global current_city, failed_count, skip_count, easy_applied_count, external_jobs_count, tabs_count, pause_before_submit, pause_at_failed_question, useNewResume
+    global current_city, failed_count, skip_count, easy_applied_count, external_jobs_count, tabs_count, pause_before_submit, pause_at_failed_question, useNewResume, last_job_skip_reason
     current_city = current_city.strip()
 
     if randomize_search_order:  shuffle(search_terms)
@@ -1342,11 +1386,14 @@ def apply_to_jobs(search_terms: list[str]) -> None:
 
                     job_id,title,company,work_location,work_style,skip = get_job_main_details(job, blacklisted_companies, rejected_jobs)
                     
-                    if skip: continue
+                    if skip:
+                        record_not_applied(title, company, last_job_skip_reason or "Skipped by job filters")
+                        continue
                     # Redundant fail safe check for applied jobs!
                     try:
                         if job_id in applied_jobs or find_by_class(driver, "jobs-s-apply__application-link", 2):
                             print_lg(f'Already applied to "{title} | {company}" job. Job ID: {job_id}!')
+                            record_not_applied(title, company, "Already applied")
                             continue
                     except Exception as e:
                         print_lg(f'Trying to Apply to "{title} | {company}" job. Job ID: {job_id}')
@@ -1369,6 +1416,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                     except ValueError as e:
                         print_lg(e, 'Skipping this job!\n')
                         failed_job(job_id, job_link, resume, date_listed, "Found Blacklisted words in About Company", e, "Skipped", screenshot_name)
+                        record_not_applied(title, company, "Blacklisted company", "Found blacklisted words in About Company")
                         skip_count += 1
                         continue
                     except Exception as e:
@@ -1421,6 +1469,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                     if skip:
                         print_lg(message)
                         failed_job(job_id, job_link, resume, date_listed, reason, message, "Skipped", screenshot_name)
+                        record_not_applied(title, company, reason, message)
                         rejected_jobs.add(job_id)
                         skip_count += 1
                         continue
@@ -1561,11 +1610,13 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                         except UnansweredQuestions as e:
                             print_lg(str(e))
                             print_lg("Add those answers to config/questions.py and re-run to apply to this job.")
+                            record_not_applied(title, company, "Required Easy Apply question unanswered", str(e))
                             skip_count += 1
                             discard_job()
                             continue
 
                         except Exception as e:
+                            record_not_applied(title, company, "Easy Apply failed", str(e))
                             logger.warning("Failed to Easy apply!")
                             # print_lg(e)
                             critical_error_log("Somewhere in Easy Apply process",e)
@@ -1578,8 +1629,11 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                         skip, application_link, tabs_count = external_apply(pagination_element, job_id, job_link, resume, date_listed, application_link, screenshot_name)
                         if dailyEasyApplyLimitReached:
                             print_lg("\n###############  Daily application limit for Easy Apply is reached!  ###############\n")
+                            record_not_applied(title, company, "Daily Easy Apply limit reached")
                             return
-                        if skip: continue
+                        if skip:
+                            record_not_applied(title, company, "External application skipped" if not easy_apply_only else "Easy Apply only mode")
+                            continue
 
                     submitted_jobs(job_id, title, company, work_location, work_style, description, experience_required, skills, hr_name, hr_link, resume, reposted, date_listed, date_applied, job_link, application_link, questions_list, connect_request)
                     if uploaded:   useNewResume = False
@@ -1691,6 +1745,9 @@ def main() -> None:
         pyautogui.alert(e,alert_title)
     finally:
         summary = "Total runs: {}\nJobs Easy Applied: {}\nExternal job links collected: {}\nTotal applied or collected: {}\nFailed jobs: {}\nIrrelevant jobs skipped: {}\n".format(total_runs,easy_applied_count,external_jobs_count,easy_applied_count + external_jobs_count,failed_count,skip_count)
+        not_applied_summary = format_not_applied_details()
+        if not_applied_summary:
+            summary += "\\n" + not_applied_summary + "\\n"
         print_lg(summary)
         print_lg("\n\nTotal runs:                     {}".format(total_runs))
         print_lg("Jobs Easy Applied:              {}".format(easy_applied_count))
@@ -1699,6 +1756,14 @@ def main() -> None:
         print_lg("Total applied or collected:     {}".format(easy_applied_count + external_jobs_count))
         print_lg("\nFailed jobs:                    {}".format(failed_count))
         print_lg("Irrelevant jobs skipped:        {}\n".format(skip_count))
+        if not_applied_details:
+            print_lg("\n\n========== APPLICATIONS NOT COMPLETED ==========")
+            for index, (title, company, reason, detail) in enumerate(not_applied_details, 1):
+                print_lg(f"{index}. {title} | {company}")
+                print_lg(f"   Reason: {reason}")
+                if detail:
+                    print_lg(f"   Detail: {detail}")
+            print_lg("================================================\n")
         if randomly_answered_questions: print_lg("\n\nQuestions randomly answered:\n  {}  \n\n".format(";\n".join(str(question) for question in randomly_answered_questions)))
         quotes = choice([
             "Never quit. You're one step closer than before. - Sai Vignesh Golla", 
