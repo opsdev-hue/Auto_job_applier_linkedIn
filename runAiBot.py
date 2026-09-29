@@ -242,25 +242,80 @@ def get_applied_job_ids() -> set[str]:
 
 def set_search_location() -> None:
     '''
-    Function to set search location
-    '''
-    if search_location.strip():
-        try:
-            print_lg(f'Setting search location as: "{search_location.strip()}"')
-            search_location_ele = try_xp(driver, ".//input[@aria-label='City, state, or zip code'and not(@disabled)]", False) #  and not(@aria-hidden='true')]")
-            text_input(actions, search_location_ele, search_location, "Search Location")
-        except ElementNotInteractableException:
-            try_xp(driver, ".//label[@class='jobs-search-box__input-icon jobs-search-box__keywords-label']")
-            actions.send_keys(Keys.TAB, Keys.TAB).perform()
-            actions.key_down(Keys.CONTROL).send_keys("a").key_up(Keys.CONTROL).perform()
-            human_type(actions, search_location.strip())
-            sleep(2)
-            actions.send_keys(Keys.ENTER).perform()
-            try_xp(driver, ".//button[@aria-label='Cancel']")
-        except Exception as e:
-            try_xp(driver, ".//button[@aria-label='Cancel']")
-            logger.warning("Failed to update search location, continuing with default location! %s", e)
+    Set the LinkedIn jobs search location.
 
+    LinkedIn localizes this field, so the old exact English aria-label
+    ("City, state, or zip code") is not reliable when the account/UI is German.
+    '''
+    if not search_location.strip():
+        return
+
+    location = search_location.strip()
+    try:
+        print_lg(f'Setting search location as: "{location}"')
+
+        location_xpath = (
+            ".//input[not(@disabled) and not(@aria-hidden='true') and ("
+            "contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'city') or "
+            "contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'location') or "
+            "contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'ort') or "
+            "contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'zip') or "
+            "contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'plz') or "
+            "contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'city') or "
+            "contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'location') or "
+            "contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'ort') or "
+            "contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'zip') or "
+            "contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ','abcdefghijklmnopqrstuvwxyzäöü'),'plz')"
+            ")]"
+        )
+
+        search_location_ele = pick_first_displayed(
+            driver.find_elements(By.XPATH, location_xpath)
+        )
+
+        # Fallback for localized/changed labels: LinkedIn normally renders keyword
+        # and location as the first two visible jobs-search text inputs.
+        if not search_location_ele:
+            search_inputs = [
+                element for element in driver.find_elements(
+                    By.XPATH,
+                    ".//input[contains(@class,'jobs-search-box__text-input') and "
+                    "not(@disabled) and not(@aria-hidden='true')]"
+                )
+                if element.is_displayed()
+            ]
+            if len(search_inputs) >= 2:
+                search_location_ele = search_inputs[1]
+
+        if search_location_ele:
+            text_input(actions, search_location_ele, location, "Search Location")
+            return
+
+        logger.warning(
+            "Search Location input was not found; continuing with LinkedIn's current/default location."
+        )
+    except (ElementNotInteractableException, StaleElementReferenceException):
+        try:
+            search_inputs = [
+                element for element in driver.find_elements(
+                    By.XPATH,
+                    ".//input[contains(@class,'jobs-search-box__text-input') and not(@disabled)]"
+                )
+                if element.is_displayed()
+            ]
+            if len(search_inputs) >= 2:
+                search_inputs[1].click()
+                search_inputs[1].clear()
+                human_type(search_inputs[1], location)
+                sleep(2)
+                actions.send_keys(Keys.ENTER).perform()
+                return
+        except Exception as e:
+            logger.warning("Keyboard fallback for search location failed: %s", e)
+    except Exception as e:
+        logger.warning(
+            "Failed to update search location, continuing with default location! %s", e
+        )
 
 def recommended_filter_wait(gap: int) -> int:
     '''Pause between filter sections; only skipped when the user asked for no click gap at all.'''
