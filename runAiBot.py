@@ -762,15 +762,20 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                 options = "".join([f' "{option}",' for option in optionsText])
             prev_answer = selected_option
             if overwrite_previous_answers or selected_option == "Select an option":
-                # Pick a sensible answer for the dropdown from the question label.
-                # Whole words only, and work authorization first: "Are you currently legally
-                # authorized to work in the United States?" contains "state" and used to be
-                # answered with the state of residence.
-                auth_answer = work_authorization_answer(label)
-                if auth_answer is not None:
-                    answer = auth_answer
-                elif label_has(label, 'email', 'phone'):
-                    answer = prev_answer
+                # LinkedIn preselects the phone country code from the browser/account locale.
+                # Do not keep that locale-derived value: use the explicitly configured code.
+                if label_has(label, 'phone country code', 'country calling code', 'country code'):
+                    answer = phone_country_code
+                else:
+                    # Pick a sensible answer for the dropdown from the question label.
+                    # Whole words only, and work authorization first: "Are you currently legally
+                    # authorized to work in the United States?" contains "state" and used to be
+                    # answered with the state of residence.
+                    auth_answer = work_authorization_answer(label)
+                    if auth_answer is not None:
+                        answer = auth_answer
+                    elif label_has(label, 'email', 'phone'):
+                        answer = prev_answer
                 elif label_has(label, 'gender', 'sex', 'sexual orientation'):
                     answer = gender
                 elif label_has(label, 'disability'):
